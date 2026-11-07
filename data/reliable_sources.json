@@ -1,0 +1,23 @@
+{
+    "reuters.com": "International News Agency",
+    "apnews.com": "International News Agency",
+    "bbc.com": "Public Broadcaster",
+    "bbc.co.uk": "Public Broadcaster",
+    "npr.org": "Public Broadcaster",
+    "pbs.org": "Public Broadcaster",
+    "nature.com": "Scientific Journal",
+    "science.org": "Scientific Journal",
+    "thelancet.com": "Medical Journal",
+    "nejm.org": "Medical Journal",
+    "who.int": "International Health Organization",
+    "cdc.gov": "Government Health Agency",
+    "nih.gov": "Government Health Agency",
+    "nasa.gov": "Government Science Agency",
+    "nytimes.com": "Major Newspaper",
+    "washingtonpost.com": "Major Newspaper",
+    "theguardian.com": "Major Newspaper",
+    "economist.com": "News Magazine",
+    "snopes.com": "Fact-Checking Organization",
+    "factcheck.org": "Fact-Checking Organization",
+    "politifact.com": "Fact-Checking Organization"
+}
