@@ -18,6 +18,8 @@ from datetime import datetime
 from config import Config
 from knowledge_base.db import init_db, save_analysis, get_history
 from modules.fact_checker import check_claim
+from modules.gemini_verifier import analyze_with_gemini
+from modules.wiki_verifier import verify_with_wikipedia
 from modules.input_processor import process_input
 from modules.linguistic_analyzer import analyze_linguistics
 from modules.nlp_analyzer import analyze_text
@@ -39,7 +41,12 @@ def print_banner():
     print("=" * 75)
 
 
-def run_pipeline(text_input: str, input_type: str = "claim", api_key: str = None) -> dict:
+def run_pipeline(
+    text_input: str,
+    input_type: str = "claim",
+    api_key: str = None,
+    gemini_key: str = None,
+) -> dict:
     """Run the complete detection pipeline and return results."""
     print(f"\n[*] Processing input ({input_type})...")
     processed = process_input(text_input, input_type)
@@ -66,12 +73,24 @@ def run_pipeline(text_input: str, input_type: str = "claim", api_key: str = None
     print("[*] Running Linguistic Analysis (clickbait, fallacies, tone)...")
     ling_result = analyze_linguistics(text)
 
+    print("[*] Cross-referencing Wikipedia Knowledge Graph...")
+    wiki_result = verify_with_wikipedia(text)
+
+    # Gemini analysis
+    gemini_key = gemini_key or Config.GEMINI_API_KEY
+    gemini_result = None
+    if gemini_key:
+        print("[*] Running Gemini Deep Reasoning & Multi-Claim Extraction...")
+        gemini_result = analyze_with_gemini(text, api_key=gemini_key)
+
     print("[*] Aggregating credibility scores...")
     score_result = calculate_credibility_score(
         nlp_result=nlp_result,
         fact_check_result=fact_result,
         source_result=source_result,
         linguistic_result=ling_result,
+        gemini_result=gemini_result,
+        wiki_result=wiki_result,
     )
 
     overall_score = score_result.get("overall_score", 50)
@@ -89,6 +108,7 @@ def run_pipeline(text_input: str, input_type: str = "claim", api_key: str = None
         "fact_check": fact_result,
         "source_credibility": source_result,
         "linguistic_analysis": ling_result,
+        "gemini_analysis": gemini_result,
         "source_url": source_url,
     }
 
@@ -133,6 +153,22 @@ def display_results(result: dict):
         print("\n[Key Findings]")
         for finding in findings:
             print(f"  • {finding}")
+
+    # Display Gemini Atomic Claims if available
+    gem = result.get("gemini_analysis", {})
+    if gem and gem.get("available"):
+        print("\n[Gemini Deep Reasoning & Atomic Claims]")
+        summary = gem.get("verdict_summary")
+        if summary:
+            print(f"  Summary : {summary}")
+        claims = gem.get("atomic_claims", [])
+        if claims:
+            print("  Atomic Claims Breakdown:")
+            for i, c in enumerate(claims, 1):
+                print(f"    {i}. {c.get('claim')} -> [{c.get('assessment')}] (Verifiability: {c.get('verifiability')})")
+        fallacies = [f for f in gem.get("logical_fallacies", []) if f and f.lower() != "none"]
+        if fallacies:
+            print(f"  Logical Fallacies Detected : {', '.join(fallacies)}")
 
     print("\n" + "=" * 75)
 
@@ -197,19 +233,20 @@ def main():
     parser.add_argument("--url", type=str, help="Article URL to analyze")
     parser.add_argument("--interactive", action="store_true", help="Launch interactive CLI")
     parser.add_argument("--api-key", type=str, help="Google Fact Check Tools API key")
+    parser.add_argument("--gemini-key", type=str, help="Google AI Studio Gemini API key")
     parser.add_argument("--json", action="store_true", help="Output full JSON result")
 
     args = parser.parse_args()
     init_db()
 
     if args.claim:
-        res = run_pipeline(args.claim, "claim", api_key=args.api_key)
+        res = run_pipeline(args.claim, "claim", api_key=args.api_key, gemini_key=args.gemini_key)
         if args.json:
             print(json.dumps(res, indent=2, default=str))
         else:
             display_results(res)
     elif args.url:
-        res = run_pipeline(args.url, "url", api_key=args.api_key)
+        res = run_pipeline(args.url, "url", api_key=args.api_key, gemini_key=args.gemini_key)
         if args.json:
             print(json.dumps(res, indent=2, default=str))
         else:

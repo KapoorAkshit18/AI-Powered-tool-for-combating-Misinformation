@@ -9,7 +9,9 @@ Uses TextBlob for:
 Returns a dictionary of scores and flags.
 """
 
+import re
 from textblob import TextBlob
+
 
 
 # Words commonly associated with emotional manipulation in news
@@ -42,8 +44,8 @@ BIAS_WORDS: set[str] = {
 
 def _count_word_hits(text_lower: str, word_set: set[str]) -> list[str]:
     """Return the list of words from *word_set* that appear in the text."""
-    # Split once for O(n) lookup
-    tokens = set(text_lower.split())
+    # Strip punctuation and tokenize words
+    tokens = set(re.findall(r"\b[a-z0-9_-]+\b", text_lower))
     return sorted(tokens & word_set)
 
 

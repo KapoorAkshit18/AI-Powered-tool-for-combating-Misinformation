@@ -14,6 +14,7 @@ The tool evaluates content through **5 independent analysis modules**:
 
 | Module | What It Analyzes |
 |---|---|
+| **🤖 Gemini AI Verifier** | Multi-claim atomic decomposition, logical fallacies (strawman, false dilemma, etc.), and manipulation tactics |
 | **🧠 NLP Analyzer** | Sentiment polarity, subjectivity, and density of emotional/loaded language |
 | **✅ Fact Checker** | Google Fact Check Tools API integration for matching against verified verdicts |
 | **🌐 Source Credibility** | Domain reputation lookup against verified reliable and unreliable databases |

@@ -18,6 +18,8 @@ from modules.nlp_analyzer import analyze_text
 from modules.fact_checker import check_claim
 from modules.source_credibility import assess_source
 from modules.linguistic_analyzer import analyze_linguistics
+from modules.gemini_verifier import analyze_with_gemini
+from modules.wiki_verifier import verify_with_wikipedia
 from modules.scoring_engine import calculate_credibility_score
 from knowledge_base.db import init_db, save_analysis, get_history
 from config import Config
@@ -115,7 +117,9 @@ init_db()
 if "analysis_result" not in st.session_state:
     st.session_state.analysis_result = None
 if "fact_check_api_key" not in st.session_state:
-    st.session_state.fact_check_api_key = ""
+    st.session_state.fact_check_api_key = Config.GOOGLE_FACTCHECK_API_KEY or ""
+if "gemini_api_key" not in st.session_state:
+    st.session_state.gemini_api_key = Config.GEMINI_API_KEY or ""
 
 # ---------------------------------------------------------------------------
 # Sidebar
@@ -166,16 +170,28 @@ with st.sidebar:
     st.divider()
 
     # --- Settings ---
-    with st.expander("⚙️ Settings", expanded=False):
+    with st.expander("⚙️ Settings & API Keys", expanded=False):
+        st.markdown("**🤖 Google Gemini (AI Studio)**")
+        gemini_key_input = st.text_input(
+            "Gemini API Key",
+            value=st.session_state.gemini_api_key,
+            type="password",
+            help="Free API key from https://aistudio.google.com/ to enable multi-claim extraction & deep logical reasoning.",
+        )
+        if gemini_key_input != st.session_state.gemini_api_key:
+            st.session_state.gemini_api_key = gemini_key_input
+            st.success("Gemini API key updated.")
+
+        st.markdown("**✅ Google Fact Check Tools API**")
         api_key_input = st.text_input(
-            "Google Fact Check API Key",
+            "Fact Check Tools API Key",
             value=st.session_state.fact_check_api_key,
             type="password",
-            help="Enter your Google Fact Check Tools API key to enable fact-check lookups.",
+            help="Optional Google Cloud Console Fact Check API key.",
         )
         if api_key_input != st.session_state.fact_check_api_key:
             st.session_state.fact_check_api_key = api_key_input
-            st.success("API key saved for this session.")
+            st.success("Fact Check API key updated.")
 
 # ---------------------------------------------------------------------------
 # Helper utilities
@@ -321,7 +337,7 @@ def _generate_text_report(result: dict) -> str:
             lines.append(f"  • {f}")
 
     # Detailed sections
-    for section_key in ("nlp_analysis", "fact_check", "source_credibility", "linguistic_analysis"):
+    for section_key in ("nlp_analysis", "fact_check", "source_credibility", "linguistic_analysis", "gemini_analysis"):
         section = result.get(section_key)
         if section:
             lines.append(f"\n{'—'*40}")
@@ -415,12 +431,24 @@ if analyse_clicked:
                 # 5. Linguistic analysis
                 ling_result = analyze_linguistics(text)
 
-                # 6. Aggregate score
+                # 6. Wikipedia Knowledge Graph Corroboration
+                wiki_result = verify_with_wikipedia(text)
+
+                # 7. Gemini deep reasoning & claim extraction
+                gemini_key = (
+                    st.session_state.gemini_api_key
+                    or Config.GEMINI_API_KEY
+                )
+                gemini_result = analyze_with_gemini(text, api_key=gemini_key)
+
+                # 8. Aggregate calibrated score
                 score_result = calculate_credibility_score(
                     nlp_result=nlp_result,
                     fact_check_result=fact_result,
                     source_result=source_result,
                     linguistic_result=ling_result,
+                    gemini_result=gemini_result,
+                    wiki_result=wiki_result,
                 )
 
                 overall_score = score_result.get("overall_score", 50)
@@ -440,6 +468,8 @@ if analyse_clicked:
                     "fact_check": fact_result,
                     "source_credibility": source_result,
                     "linguistic_analysis": ling_result,
+                    "gemini_analysis": gemini_result,
+                    "wiki_analysis": wiki_result,
                     "source_url": url,
                 }
 
@@ -576,6 +606,81 @@ if result is not None:
                     st.info(details)
             else:
                 st.caption("Linguistic analysis data not available.")
+
+        # Gemini Deep Reasoning & Atomic Claims
+        with st.expander("🤖 Gemini Deep Reasoning & Multi-Claim Breakdown", expanded=True):
+            gem = result.get("gemini_analysis", {})
+            if gem and gem.get("available"):
+                gem_score = gem.get("ai_credibility_score", "–")
+                conf = gem.get("confidence", "Medium")
+                c1, c2, c3 = st.columns([1, 1, 2])
+                c1.metric("Gemini Credibility", f"{gem_score}/100")
+                c2.metric("Confidence", conf)
+                c3.metric("Evidence Quality", gem.get("evidence_quality", "N/A"))
+
+                summary = gem.get("verdict_summary")
+                if summary:
+                    st.info(f"**Forensic Summary:** {summary}")
+
+                # Atomic claims breakdown
+                claims = gem.get("atomic_claims", [])
+                if claims:
+                    st.markdown("##### 🔬 Atomic Claims Breakdown")
+                    for i, ac in enumerate(claims, 1):
+                        assessment = ac.get("assessment", "Unverified")
+                        badge_color = (
+                            "🟢" if "True" in assessment 
+                            else "🔴" if ("False" in assessment or "Misleading" in assessment) 
+                            else "🟡"
+                        )
+                        st.markdown(
+                            f"**{i}. {ac.get('claim')}**  \n"
+                            f"{badge_color} *Status:* **{assessment}** (Verifiability: {ac.get('verifiability', 'N/A')})  \n"
+                            f"*{ac.get('note', '')}*"
+                        )
+                        st.markdown("---")
+
+                # Fallacies & manipulation tactics
+                fallacies = [f for f in gem.get("logical_fallacies", []) if f and f.lower() != "none"]
+                tactics = [t for t in gem.get("manipulation_tactics", []) if t and t.lower() != "none"]
+
+                if fallacies or tactics:
+                    fc1, fc2 = st.columns(2)
+                    with fc1:
+                        if fallacies:
+                            st.markdown("⚠️ **Detected Logical Fallacies:**")
+                            for f in fallacies:
+                                st.markdown(f"- `{f}`")
+                    with fc2:
+                        if tactics:
+                            st.markdown("🚨 **Manipulation Tactics:**")
+                            for t in tactics:
+                                st.markdown(f"- `{t}`")
+            else:
+                err_msg = (
+                    gem.get("error")
+                    or gem.get("message")
+                    or "Add your free Google AI Studio key in sidebar Settings to unlock atomic claim extraction and fallacy detection."
+                )
+                st.caption(f"ℹ️ {err_msg}")
+
+        # Wikipedia Knowledge Graph Corroboration
+        with st.expander("📚 Wikipedia Knowledge Graph & Context", expanded=True):
+            wiki = result.get("wiki_analysis", {})
+            if wiki and wiki.get("available"):
+                w_score = wiki.get("score", 50)
+                st.metric("Knowledge Alignment", f"{w_score}/100")
+                summary = wiki.get("summary")
+                if summary:
+                    st.info(summary)
+
+                matches = wiki.get("matches", [])
+                if matches:
+                    st.markdown("##### 🔍 Relevant Encyclopedia Reference Articles:")
+                    for m in matches:
+                        st.markdown(f"- [**{m['title']}**]({m['url']}): *{m['snippet']}*")
+            else:
+                st.caption("Wikipedia knowledge lookup not available.")
 
     # ---- Tab 3: Score Breakdown -------------------------------------------
     with tab_scores:

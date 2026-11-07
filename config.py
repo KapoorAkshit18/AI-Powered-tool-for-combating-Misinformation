@@ -19,6 +19,7 @@ DB_PATH = DATA_DIR / "misinformation_kb.db"
 
 # --- API Keys ---
 GOOGLE_FACTCHECK_API_KEY: str | None = os.getenv("GOOGLE_FACTCHECK_API_KEY")
+GEMINI_API_KEY: str | None = os.getenv("GEMINI_API_KEY")
 
 # --- App Settings ---
 APP_TITLE = "AI-Powered Misinformation Detection Tool"
@@ -45,6 +46,7 @@ class Config:
     DATA_DIR = DATA_DIR
     DB_PATH = DB_PATH
     GOOGLE_FACTCHECK_API_KEY = GOOGLE_FACTCHECK_API_KEY
+    GEMINI_API_KEY = GEMINI_API_KEY
     APP_TITLE = APP_TITLE
     APP_ICON = APP_ICON
     MAX_HISTORY_RESULTS = MAX_HISTORY_RESULTS
