@@ -1,4 +1,4 @@
-# 🛡️ AI-Powered Misinformation Detection Tool
+# 🛡️ AI-Powered Misinformation Detection Tool for GenAI Hackathon by Hack2Skill
 
 An intelligent, multi-layered misinformation detection engine built with Python and Streamlit. This is a **detection and analysis tool** (not a chatbot) that evaluates claims, articles, and URLs to produce structured credibility verdicts backed by multiple analytical lenses.
 
@@ -171,6 +171,15 @@ This tool is designed to **assist human judgment**, not replace it. Credibility 
 
 ---
 
+## Acknowledgements 
+1. Clash with Ai Team
+(Akshit, Vinay, Utsav)
+
+
+
+
+
+---
 ## 📄 License
 
 This project is licensed under the MIT License.
