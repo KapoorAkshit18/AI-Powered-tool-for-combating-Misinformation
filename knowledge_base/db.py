@@ -37,7 +37,7 @@ def init_db(db_path: Optional[Path] = None) -> None:
     conn = _get_connection(db_path)
     try:
         conn.execute("""
-            CREATE TABLE IF NOT EXISTS analyses (
+            CREATE TABLE IF NOT EXISTS analyses (  
                 id                  INTEGER PRIMARY KEY AUTOINCREMENT,
                 timestamp           TEXT    NOT NULL,
                 claim_text          TEXT    NOT NULL,

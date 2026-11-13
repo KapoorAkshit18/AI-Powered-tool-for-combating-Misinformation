@@ -20,6 +20,8 @@ from knowledge_base.db import init_db, save_analysis, get_history
 from modules.fact_checker import check_claim
 from modules.gemini_verifier import analyze_with_gemini
 from modules.wiki_verifier import verify_with_wikipedia
+from modules.metrics_calculator import calculate_text_metrics
+from modules.ml_classifier import predict_misinformation_probability
 from modules.input_processor import process_input
 from modules.linguistic_analyzer import analyze_linguistics
 from modules.nlp_analyzer import analyze_text
@@ -76,6 +78,12 @@ def run_pipeline(
     print("[*] Cross-referencing Wikipedia Knowledge Graph...")
     wiki_result = verify_with_wikipedia(text)
 
+    print("[*] Computing Quantitative Linguistic & Readability Metrics...")
+    metrics_result = calculate_text_metrics(text)
+
+    print("[*] Predicting Statistical Misinformation Probability (ML Model)...")
+    ml_result = predict_misinformation_probability(text)
+
     # Gemini analysis
     gemini_key = gemini_key or Config.GEMINI_API_KEY
     gemini_result = None
@@ -91,6 +99,8 @@ def run_pipeline(
         linguistic_result=ling_result,
         gemini_result=gemini_result,
         wiki_result=wiki_result,
+        ml_result=ml_result,
+        metrics_result=metrics_result,
     )
 
     overall_score = score_result.get("overall_score", 50)
@@ -109,6 +119,9 @@ def run_pipeline(
         "source_credibility": source_result,
         "linguistic_analysis": ling_result,
         "gemini_analysis": gemini_result,
+        "wiki_analysis": wiki_result,
+        "metrics_analysis": metrics_result,
+        "ml_analysis": ml_result,
         "source_url": source_url,
     }
 
@@ -153,6 +166,31 @@ def display_results(result: dict):
         print("\n[Key Findings]")
         for finding in findings:
             print(f"  • {finding}")
+
+    # Display Measurable Quantitative Metrics
+    met = result.get("metrics_analysis", {})
+    if met:
+        print("\n[Measurable Linguistic & Readability Metrics]")
+        print(f"  Flesch Reading Ease   : {met.get('flesch_reading_ease')}/100")
+        print(f"  Grade Level           : Grade {met.get('flesch_kincaid_grade')}")
+        print(f"  Lexical Diversity TTR : {met.get('lexical_diversity_ttr'):.3f}")
+        print(f"  Uppercase Ratio       : {met.get('uppercase_ratio_pct')}%")
+        print(f"  Punctuation Density   : {met.get('punctuation_density_per_100w')} / 100w")
+        print(f"  95% Confidence Margin : ±{met.get('margin_of_error_pct')}%")
+
+    # Display ML Statistical Model Probability
+    ml_res = result.get("ml_analysis", {})
+    if ml_res and ml_res.get("available"):
+        print("\n[Statistical Machine Learning Model]")
+        print(f"  Misinformation Probability : {ml_res.get('misinfo_probability_pct'):.2f}%")
+        print(f"  Credibility Probability    : {ml_res.get('credible_probability_pct'):.2f}%")
+        ci = ml_res.get("confidence_interval_95", (0, 0))
+        print(f"  95% Confidence Bounds      : [{ci[0]}% - {ci[1]}%]")
+        feats = ml_res.get("top_predictive_features", [])
+        if feats:
+            print("  Top N-Gram Indicators      :")
+            for f_item in feats[:3]:
+                print(f"    • '{f_item['term']}': {f_item['impact']} (coeff: {f_item['weight']:+.3f})")
 
     # Display Gemini Atomic Claims if available
     gem = result.get("gemini_analysis", {})

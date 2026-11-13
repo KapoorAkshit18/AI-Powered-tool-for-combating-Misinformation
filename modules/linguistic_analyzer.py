@@ -37,14 +37,19 @@ ASSERTIVE_PHRASES: list[str] = [
 # Regex-based logical fallacy detectors
 FALLACY_PATTERNS: dict[str, list[re.Pattern[str]]] = {
     "Hasty Generalization": [
-        re.compile(r"\b(all|every|everyone|always|never|nobody)\b.*\b(is|are|does|do|will|has|have)\b", re.I),
+        re.compile(r"\b(all|every|everyone|always|never|nobody)\b.*\b(is|are|does|do|will|has|have|lies|lie|can|cannot|can't)\b", re.I),
+        re.compile(r"\b(everyone|nobody|no one|all people)\b.{0,40}\b(always|never|can|cannot|can't|will|won't)\b", re.I),
         re.compile(r"\bpeople always\b", re.I),
         re.compile(r"\beveryone knows\b", re.I),
+        re.compile(r"\bnobody can be trusted\b", re.I),
+        re.compile(r"\balways (lies|lie|lying|cheats|cheat|steals|steal)\b", re.I),
     ],
     "False Dichotomy": [
         re.compile(r"\beither\b.*\bor\b", re.I),
         re.compile(r"\byou('re| are) (either|with us or against)", re.I),
-        re.compile(r"\bthere (is|are) only two (options|choices|ways)\b", re.I),
+        re.compile(r"\bonly two (options|choices|ways)\b", re.I),
+        re.compile(r"\bthere (is|are) only (two|2) (options|choices|ways)\b", re.I),
+        re.compile(r"\b(support|agree|accept).{0,30}\b(or|otherwise).{0,30}\b(hate|against|enemy|traitor)\b", re.I),
     ],
     "Appeal to Emotion": [
         re.compile(r"\bthink of the children\b", re.I),

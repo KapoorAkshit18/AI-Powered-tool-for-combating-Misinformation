@@ -104,20 +104,49 @@ def verify_with_wikipedia(claim_text: str) -> dict[str, Any]:
         ]
         detected_ambiguities = [sig for sig in ambiguity_signals if sig in combined_text]
 
-        # Baseline score: matches found provide context
-        score = 55.0
-        if detected_ambiguities:
+        # Check keyword overlap between claim and Wikipedia snippets
+        claim_keywords = set(w.lower() for w in re.findall(r"\b[a-zA-Z0-9]{3,}\b", claim_text))
+        stop_words = {"the", "and", "once", "every", "that", "this", "from", "with", "for", "are"}
+        claim_content_words = claim_keywords - stop_words
+
+        overlap_ratio = 0.0
+        if claim_content_words:
+            snippet_words = set(re.findall(r"\b[a-zA-Z0-9]{3,}\b", combined_text))
+            # Match word stems/substrings (e.g. orbit vs orbits)
+            matched_words = {
+                cw for cw in claim_content_words
+                if any(cw in sw or sw in cw for sw in snippet_words)
+            }
+            overlap_ratio = len(matched_words) / len(claim_content_words)
+
+        # Factual alignment scoring
+        if overlap_ratio >= 0.70 and not detected_ambiguities:
+            score = 85.0
+            corroborated = True
+            matched_titles = ", ".join(m["title"] for m in matches[:3])
+            summary = (
+                f"Strong Wikipedia Knowledge Alignment: Confirmed consensus across "
+                f"authoritative reference articles ({matched_titles})."
+            )
+        elif overlap_ratio >= 0.45 and not detected_ambiguities:
+            score = 75.0
+            corroborated = True
+            summary = f"Supported by Wikipedia reference articles with {round(overlap_ratio * 100)}% factual context match."
+        elif detected_ambiguities:
             score = 45.0
+            corroborated = False
             summary = (
                 f"Knowledge base indicates contextual ambiguity or naming distinctions "
                 f"related to this topic ({', '.join(detected_ambiguities)})."
             )
         else:
+            score = 55.0
+            corroborated = False
             summary = f"Found {len(matches)} related reference articles on Wikipedia for context verification."
 
         return {
             "available": True,
-            "corroborated": len(matches) > 0,
+            "corroborated": corroborated,
             "score": score,
             "matches": matches,
             "detected_ambiguities": detected_ambiguities,

@@ -14,12 +14,17 @@ The tool evaluates content through **5 independent analysis modules**:
 
 | Module | What It Analyzes |
 |---|---|
+| **🤖 Machine Learning Model** | Trained TF-IDF + Logistic Regression calculating exact mathematical probability $P(\text{Misinfo} \mid x) \in [0, 1]$ and top n-gram feature weights |
+| **📏 Quantitative Text Metrics** | Flesch Reading Ease, Flesch-Kincaid Grade Level, Lexical Diversity (TTR), Uppercase %, Punctuation density, and 95% Confidence Intervals |
+| **📊 Benchmark Evaluation** | Ground-truth validation across 25 benchmark claims measuring Accuracy, Precision, Recall, Specificity, F1-Score, and Confusion Matrix |
 | **🤖 Gemini AI Verifier** | Multi-claim atomic decomposition, logical fallacies (strawman, false dilemma, etc.), and manipulation tactics |
+| **📚 Wikipedia Knowledge Graph** | Entity disambiguation and knowledge consensus checking against Wikipedia |
 | **🧠 NLP Analyzer** | Sentiment polarity, subjectivity, and density of emotional/loaded language |
 | **✅ Fact Checker** | Google Fact Check Tools API integration for matching against verified verdicts |
 | **🌐 Source Credibility** | Domain reputation lookup against verified reliable and unreliable databases |
 | **📝 Linguistic Analyzer** | Clickbait patterns (ALL CAPS, excessive punctuation, superlatives), sensationalism, and logical fallacies |
 | **⚖️ Scoring Engine** | Weighted aggregate credibility score (0–100) with tailored recommendations |
+| **⚖️ Scoring Engine** | Weighted aggregate credibility score (0–100) with calibrated safety guards |
 
 All analyses are logged in a local **SQLite Knowledge Base** for historical tracking and review.
 

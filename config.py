@@ -52,3 +52,38 @@ class Config:
     MAX_HISTORY_RESULTS = MAX_HISTORY_RESULTS
     DEFAULT_CREDIBILITY_THRESHOLD = DEFAULT_CREDIBILITY_THRESHOLD
     SCORING_WEIGHTS = SCORING_WEIGHTS
+
+
+def update_env_key(key_name: str, key_value: str) -> None:
+    """Persist an API key to the .env file and update the running environment."""
+    env_file = BASE_DIR / ".env"
+    key_value = key_value.strip()
+
+    # Update in-memory environment
+    os.environ[key_name] = key_value
+    if key_name == "GEMINI_API_KEY":
+        Config.GEMINI_API_KEY = key_value
+    elif key_name == "GOOGLE_FACTCHECK_API_KEY":
+        Config.GOOGLE_FACTCHECK_API_KEY = key_value
+
+    lines = []
+    if env_file.exists():
+        lines = env_file.read_text(encoding="utf-8").splitlines()
+
+    updated = False
+    new_lines = []
+    for line in lines:
+        if line.startswith(f"{key_name}=") or line.startswith(f"#{key_name}="):
+            new_lines.append(f"{key_name}={key_value}")
+            updated = True
+        else:
+            new_lines.append(line)
+
+    if not updated:
+        new_lines.append(f"{key_name}={key_value}")
+
+    env_file.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+
+
+Config.update_env_key = update_env_key
+__all__ = ["Config", "update_env_key"]

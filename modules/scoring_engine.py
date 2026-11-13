@@ -10,9 +10,9 @@ from typing import Any, Optional
 
 # ── Verdict thresholds ──────────────────────────────────────────────
 _VERDICTS: list[tuple[int, str]] = [
-    (75, "Likely Credible"),
+    (70, "Likely Credible"),
     (50, "Needs Verification"),
-    (25, "Likely Misleading"),
+    (35, "Likely Misleading"),
     (0,  "Highly Suspicious"),
 ]
 
@@ -41,7 +41,7 @@ def _build_recommendations(
     linguistic: dict,
 ) -> list[str]:
     """Generate actionable recommendations based on the analysis."""
-    recs: list[str] = []
+    recs: list[str] = []  # isnt this like assoc array
 
     # Fact-check availability
     if not fact_check.get("available", False):
@@ -120,6 +120,8 @@ def calculate_credibility_score(
     linguistic_result: dict,
     gemini_result: Optional[dict] = None,
     wiki_result: Optional[dict] = None,
+    ml_result: Optional[dict] = None,
+    metrics_result: Optional[dict] = None,
 ) -> dict[str, Any]:
     """
     Aggregate all component analyses into an overall credibility assessment.
@@ -131,6 +133,8 @@ def calculate_credibility_score(
         linguistic_result: Output of :func:`modules.linguistic_analyzer.analyze_linguistics`.
         gemini_result:     Optional output of :func:`modules.gemini_verifier.analyze_with_gemini`.
         wiki_result:       Optional output of :func:`modules.wiki_verifier.verify_with_wikipedia`.
+        ml_result:         Optional output of :func:`modules.ml_classifier.predict_misinformation_probability`.
+        metrics_result:    Optional output of :func:`modules.metrics_calculator.calculate_text_metrics`.
 
     Returns:
         A dictionary with:
@@ -146,26 +150,33 @@ def calculate_credibility_score(
     ling_dict = linguistic_result if isinstance(linguistic_result, dict) else {}
     gem_dict = gemini_result if isinstance(gemini_result, dict) else None
     wiki_dict = wiki_result if isinstance(wiki_result, dict) else None
+    ml_dict = ml_result if isinstance(ml_result, dict) else None
 
     nlp_score = float(nlp_dict.get("nlp_credibility", 50.0))
     fc_score = float(fc_dict.get("fact_check_score", 50.0))
     ling_score = float(ling_dict.get("linguistic_credibility", 50.0))
 
     components: list[tuple[str, float, float]] = [
-        ("NLP / Tone Analysis", nlp_score, 0.20),
-        ("Fact-Check Lookup", fc_score, 0.25),
-        ("Linguistic Style", ling_score, 0.20),
+        ("NLP / Tone Analysis", nlp_score, 0.15),
+        ("Fact-Check Lookup", fc_score, 0.20),
+        ("Linguistic Style", ling_score, 0.15),
     ]
+
+    # Machine Learning Statistical Probability (Empirical Model)
+    ml_score = None
+    if ml_dict and ml_dict.get("available") and ml_dict.get("ml_credibility_score") is not None:
+        ml_score = float(ml_dict["ml_credibility_score"])
+        components.append(("Statistical ML Model", ml_score, 0.30))
 
     src_score = None
     if src_dict is not None and "credibility_score" in src_dict:
         src_score = float(src_dict.get("credibility_score", 50.0))
-        components.append(("Source Credibility", src_score, 0.25))
+        components.append(("Source Credibility", src_score, 0.20))
 
     wiki_score = None
     if wiki_dict and wiki_dict.get("available"):
         wiki_score = float(wiki_dict.get("score", 50.0))
-        components.append(("Wikipedia Knowledge Graph", wiki_score, 0.20))
+        components.append(("Wikipedia Knowledge Graph", wiki_score, 0.15))
 
     gem_score = None
     if gem_dict and gem_dict.get("available") and gem_dict.get("ai_credibility_score") is not None:
@@ -182,9 +193,6 @@ def calculate_credibility_score(
     # -------------------------------------------------------------------------
     # CRITICAL CALIBRATION RULE:
     # Calm writing style alone does NOT equal factual truth.
-    # A claim with ZERO affirmative factual evidence (no fact-check confirmation,
-    # no trusted publisher domain, no Gemini factual verification) can NEVER
-    # be declared "Likely Credible" (>70) solely because it lacks exclamation points.
     # -------------------------------------------------------------------------
     has_affirmative_evidence = False
     if fc_dict.get("available") and fc_score >= 65:
@@ -193,12 +201,31 @@ def calculate_credibility_score(
         has_affirmative_evidence = True
     elif gem_score is not None and gem_score >= 65:
         has_affirmative_evidence = True
+    elif ml_score is not None and ml_score >= 65:
+        has_affirmative_evidence = True
+    elif wiki_score is not None and wiki_score >= 70:
+        has_affirmative_evidence = True
+
+    # Fallacies are affirmative evidence of misinformation — don't cap, penalize
+    fallacies_detected = ling_dict.get("fallacies_detected", {})
+    fallacy_count = sum(1 for v in fallacies_detected.values() if v)
 
     if not has_affirmative_evidence and raw_overall > 55.0:
-        # Cap uncorroborated assertions at "Needs Verification"
         overall = 52.0
     else:
         overall = raw_overall
+
+    # Apply fallacy penalty after capping
+    if fallacy_count > 0:
+        overall = min(overall, 45.0 - (fallacy_count - 1) * 5)
+
+    # If ML model specifically detects high probability of misinformation, enforce drop
+    if ml_score is not None and ml_score <= 35.0:
+        overall = min(overall, ml_score)
+
+    # If Gemini deep reasoning identifies a confirmed fabrication / zero-evidence hoax, enforce cap
+    if gem_score is not None and gem_score <= 15.0:
+        overall = min(overall, 35.0)
 
     overall = round(max(0.0, min(100.0, overall)), 2)
     verdict = _determine_verdict(overall)

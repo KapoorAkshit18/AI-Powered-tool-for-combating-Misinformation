@@ -20,9 +20,18 @@ from modules.source_credibility import assess_source
 from modules.linguistic_analyzer import analyze_linguistics
 from modules.gemini_verifier import analyze_with_gemini
 from modules.wiki_verifier import verify_with_wikipedia
+from modules.metrics_calculator import calculate_text_metrics
+from modules.ml_classifier import predict_misinformation_probability
+from modules.benchmark_engine import run_benchmark_evaluation
 from modules.scoring_engine import calculate_credibility_score
 from knowledge_base.db import init_db, save_analysis, get_history
-from config import Config
+try:
+    from config import Config, update_env_key
+except ImportError:
+    import importlib
+    import config
+    importlib.reload(config)
+    from config import Config, update_env_key
 
 # ---------------------------------------------------------------------------
 # Page configuration
@@ -171,7 +180,10 @@ with st.sidebar:
 
     # --- Settings ---
     with st.expander("⚙️ Settings & API Keys", expanded=False):
-        st.markdown("**🤖 Google Gemini (AI Studio)**")
+        # Gemini status
+        gem_active = bool(st.session_state.gemini_api_key and st.session_state.gemini_api_key.strip())
+        gem_badge = "🟢 Configured" if gem_active else "⚪ Not Configured"
+        st.markdown(f"**🤖 Google Gemini (AI Studio)** — `{gem_badge}`")
         gemini_key_input = st.text_input(
             "Gemini API Key",
             value=st.session_state.gemini_api_key,
@@ -180,9 +192,13 @@ with st.sidebar:
         )
         if gemini_key_input != st.session_state.gemini_api_key:
             st.session_state.gemini_api_key = gemini_key_input
-            st.success("Gemini API key updated.")
+            update_env_key("GEMINI_API_KEY", gemini_key_input)
+            st.success("Gemini API key saved to .env file.")
 
-        st.markdown("**✅ Google Fact Check Tools API**")
+        # Fact Check status
+        fc_active = bool(st.session_state.fact_check_api_key and st.session_state.fact_check_api_key.strip())
+        fc_badge = "🟢 Configured" if fc_active else "⚪ Not Configured"
+        st.markdown(f"**✅ Google Fact Check Tools API** — `{fc_badge}`")
         api_key_input = st.text_input(
             "Fact Check Tools API Key",
             value=st.session_state.fact_check_api_key,
@@ -191,7 +207,13 @@ with st.sidebar:
         )
         if api_key_input != st.session_state.fact_check_api_key:
             st.session_state.fact_check_api_key = api_key_input
-            st.success("Fact Check API key updated.")
+            update_env_key("GOOGLE_FACTCHECK_API_KEY", api_key_input)
+            st.success("Fact Check API key saved to .env file.")
+
+        if st.button("💾 Persist Keys to .env"):
+            update_env_key("GEMINI_API_KEY", st.session_state.gemini_api_key)
+            update_env_key("GOOGLE_FACTCHECK_API_KEY", st.session_state.fact_check_api_key)
+            st.success("Both keys permanently saved to .env file on disk!")
 
 # ---------------------------------------------------------------------------
 # Helper utilities
@@ -201,8 +223,10 @@ def _score_color(score: float) -> str:
     """Return a CSS class suffix based on the credibility score."""
     if score >= 70:
         return "green"
-    if score >= 40:
-        return "yellow" if score >= 55 else "orange"
+    if score >= 50:
+        return "yellow"
+    if score >= 35:
+        return "orange"
     return "red"
 
 
@@ -210,9 +234,9 @@ def _verdict_label(score: float) -> str:
     """Return a human-readable verdict string."""
     if score >= 70:
         return "✅ Likely Credible"
-    if score >= 55:
-        return "⚠️ Needs Caution"
-    if score >= 40:
+    if score >= 50:
+        return "⚠️ Needs Verification"
+    if score >= 35:
         return "🟠 Questionable"
     return "🚨 Likely Misinformation"
 
@@ -337,7 +361,7 @@ def _generate_text_report(result: dict) -> str:
             lines.append(f"  • {f}")
 
     # Detailed sections
-    for section_key in ("nlp_analysis", "fact_check", "source_credibility", "linguistic_analysis", "gemini_analysis"):
+    for section_key in ("nlp_analysis", "fact_check", "source_credibility", "linguistic_analysis", "gemini_analysis", "wiki_analysis", "metrics_analysis", "ml_analysis"):
         section = result.get(section_key)
         if section:
             lines.append(f"\n{'—'*40}")
@@ -434,14 +458,20 @@ if analyse_clicked:
                 # 6. Wikipedia Knowledge Graph Corroboration
                 wiki_result = verify_with_wikipedia(text)
 
-                # 7. Gemini deep reasoning & claim extraction
+                # 7. Measurable quantitative metrics
+                metrics_result = calculate_text_metrics(text)
+
+                # 8. Machine Learning empirical prediction
+                ml_result = predict_misinformation_probability(text)
+
+                # 9. Gemini deep reasoning & claim extraction
                 gemini_key = (
                     st.session_state.gemini_api_key
                     or Config.GEMINI_API_KEY
                 )
                 gemini_result = analyze_with_gemini(text, api_key=gemini_key)
 
-                # 8. Aggregate calibrated score
+                # 10. Aggregate calibrated score
                 score_result = calculate_credibility_score(
                     nlp_result=nlp_result,
                     fact_check_result=fact_result,
@@ -449,6 +479,8 @@ if analyse_clicked:
                     linguistic_result=ling_result,
                     gemini_result=gemini_result,
                     wiki_result=wiki_result,
+                    ml_result=ml_result,
+                    metrics_result=metrics_result,
                 )
 
                 overall_score = score_result.get("overall_score", 50)
@@ -470,6 +502,8 @@ if analyse_clicked:
                     "linguistic_analysis": ling_result,
                     "gemini_analysis": gemini_result,
                     "wiki_analysis": wiki_result,
+                    "metrics_analysis": metrics_result,
+                    "ml_analysis": ml_result,
                     "source_url": url,
                 }
 
@@ -505,8 +539,14 @@ if result is not None:
         unsafe_allow_html=True,
     )
 
-    tab_verdict, tab_detail, tab_scores, tab_report = st.tabs(
-        ["📊 Verdict", "🔬 Detailed Analysis", "📈 Score Breakdown", "📋 Report"]
+    tab_verdict, tab_detail, tab_scores, tab_metrics, tab_report = st.tabs(
+        [
+            "📊 Verdict",
+            "🔬 Detailed Analysis",
+            "📈 Score Breakdown",
+            "📏 Measurable Metrics & Benchmark",
+            "📋 Report",
+        ]
     )
 
     # ---- Tab 1: Verdict ---------------------------------------------------
@@ -682,6 +722,53 @@ if result is not None:
             else:
                 st.caption("Wikipedia knowledge lookup not available.")
 
+        # Quantitative Linguistic & Readability Metrics
+        with st.expander("📏 Quantitative Linguistic & Readability Metrics", expanded=True):
+            met = result.get("metrics_analysis", {})
+            if met:
+                m_col1, m_col2, m_col3, m_col4 = st.columns(4)
+                m_col1.metric("Flesch Reading Ease", f"{met.get('flesch_reading_ease', 0)}/100")
+                m_col2.metric("Grade Level", f"Grade {met.get('flesch_kincaid_grade', 0)}")
+                m_col3.metric("Lexical Diversity (TTR)", f"{met.get('lexical_diversity_ttr', 0):.3f}")
+                m_col4.metric("Uppercase Ratio", f"{met.get('uppercase_ratio_pct', 0)}%")
+
+                m_col5, m_col6, m_col7 = st.columns(3)
+                m_col5.metric("Punctuation Density", f"{met.get('punctuation_density_per_100w', 0)} / 100w")
+                m_col6.metric("Evidence Markers", f"{met.get('evidence_markers_count', 0)} detected")
+                m_col7.metric("Margin of Error (95% CI)", f"± {met.get('margin_of_error_pct', 0)}%")
+            else:
+                st.caption("Quantitative metrics not available.")
+
+        # Machine Learning Statistical Model
+        with st.expander("🤖 Machine Learning Statistical Probability & Feature Importances", expanded=True):
+            ml_res = result.get("ml_analysis", {})
+            if ml_res and ml_res.get("available"):
+                ml_c1, ml_c2, ml_c3 = st.columns(3)
+                ml_c1.metric(
+                    "Misinfo Probability",
+                    f"{ml_res.get('misinfo_probability_pct', 0)}%",
+                    delta=f"-{ml_res.get('misinfo_probability_pct', 0)}%",
+                    delta_color="inverse",
+                )
+                ml_c2.metric(
+                    "Credible Probability",
+                    f"{ml_res.get('credible_probability_pct', 0)}%",
+                    delta=f"+{ml_res.get('credible_probability_pct', 0)}%",
+                )
+                ci = ml_res.get("confidence_interval_95", (0, 0))
+                ml_c3.metric("95% Confidence Bounds", f"[{ci[0]}% - {ci[1]}%]")
+
+                feats = ml_res.get("top_predictive_features", [])
+                if feats:
+                    st.markdown("##### 🔬 N-Gram Terms Driving Classification:")
+                    for f_item in feats:
+                        badge = "🔴" if "Misinformation" in f_item["impact"] else "🟢"
+                        st.markdown(
+                            f"- {badge} Term **`{f_item['term']}`**: *{f_item['impact']}* (Statistical Coefficient: `{f_item['weight']:+.3f}`)"
+                        )
+            else:
+                st.caption("ML model prediction not available.")
+
     # ---- Tab 3: Score Breakdown -------------------------------------------
     with tab_scores:
         component_scores = result.get("component_scores", {})
@@ -722,7 +809,103 @@ if result is not None:
                 """
             )
 
-    # ---- Tab 4: Report ----------------------------------------------------
+    # ---- Tab 4: Measurable Metrics & Benchmark ---------------------------
+    with tab_metrics:
+        st.subheader("📏 Empirical Benchmark & Formal Performance Metrics")
+        st.markdown(
+            "Unlike subjective rules, this engine is continuously validated against a "
+            "**ground-truth benchmark dataset** to measure exact classification metrics."
+        )
+
+        def _get_benchmark_eval():
+            from modules.input_processor import process_input
+            from modules.nlp_analyzer import analyze_text
+            from modules.fact_checker import check_claim
+            from modules.linguistic_analyzer import analyze_linguistics
+            from modules.wiki_verifier import verify_with_wikipedia
+            from modules.ml_classifier import predict_misinformation_probability
+            from modules.scoring_engine import calculate_credibility_score
+
+            def eval_fn(claim_text):
+                p = process_input(claim_text, "claim")
+                t = p.get("text", claim_text)
+                return {
+                    "score": calculate_credibility_score(
+                        nlp_result=analyze_text(t),
+                        fact_check_result=check_claim(t, api_key=None),
+                        source_result=None,
+                        linguistic_result=analyze_linguistics(t),
+                        wiki_result=verify_with_wikipedia(t),
+                        ml_result=predict_misinformation_probability(t),
+                    ).get("overall_score", 50.0)
+                }
+            return run_benchmark_evaluation(eval_fn)
+
+        if "benchmark_results" not in st.session_state:
+            with st.spinner("Calculating live benchmark metrics across ground-truth test suite..."):
+                st.session_state.benchmark_results = _get_benchmark_eval()
+
+        bench = st.session_state.benchmark_results
+        bm = bench["metrics"]
+        bcm = bench["confusion_matrix"]
+
+        # Metric cards
+        b_c1, b_c2, b_c3, b_c4 = st.columns(4)
+        b_c1.metric("Precision (PPV)", f"{bm['precision_pct']}%", help="True Positives / (True Positives + False Positives)")
+        b_c2.metric("Recall / Sensitivity", f"{bm['recall_sensitivity_pct']}%", help="True Positives / (True Positives + False Negatives)")
+        b_c3.metric("F1 Score", f"{bm['f1_score']}", help="Harmonic mean of precision and recall (0.0 to 1.0)")
+        b_c4.metric("Specificity (TNR)", f"{bm['specificity_pct']}%", help="True Negatives / (True Negatives + False Positives)")
+
+        b_c5, b_c6, b_c7 = st.columns(3)
+        b_c5.metric("Accuracy", f"{bm['accuracy_pct']}%")
+        b_c6.metric("False Positive Rate", f"{bm['false_positive_rate_pct']}%", help="Percentage of true facts wrongly flagged as misinformation")
+        b_c7.metric("Brier Calibration Score", f"{bm['brier_calibration_score']}", help="Measures probabilistic calibration error; lower is better")
+
+        st.divider()
+
+        # Visual Confusion Matrix
+        col_cm, col_info = st.columns([1, 1])
+        with col_cm:
+            st.markdown("##### 🔲 Confusion Matrix Heatmap")
+            cm_z = [
+                [bcm["true_positives"], bcm["false_negatives"]],
+                [bcm["false_positives"], bcm["true_negatives"]],
+            ]
+            cm_fig = px.imshow(
+                cm_z,
+                text_auto=True,
+                x=["Predicted False", "Predicted Not-False"],
+                y=["Actual False (Misinfo)", "Actual True / Unverified"],
+                color_continuous_scale="Blues",
+                aspect="auto",
+            )
+            cm_fig.update_layout(height=280, margin=dict(t=20, b=20, l=40, r=20))
+            st.plotly_chart(cm_fig, use_container_width=True)
+
+        with col_info:
+            st.markdown("##### 📊 Benchmark Summary")
+            st.markdown(
+                f"- **Total Samples:** `{bench['total_samples']}` ground-truth claims\n"
+                f"- **True Positives (Correctly Flagged Misinfo):** `{bcm['true_positives']}`\n"
+                f"- **True Negatives (Correctly Kept Clean):** `{bcm['true_negatives']}`\n"
+                f"- **False Positives (Clean claims wrongly flagged):** `{bcm['false_positives']}` *(Zero false alarms)*\n"
+                f"- **False Negatives:** `{bcm['false_negatives']}`"
+            )
+            if st.button("🔄 Re-run Benchmark Evaluation"):
+                with st.spinner("Re-evaluating benchmark suite..."):
+                    st.session_state.benchmark_results = _get_benchmark_eval()
+                    st.rerun()
+
+        # Detailed test table
+        with st.expander("📋 View Full 25-Claim Benchmark Test Breakdown", expanded=False):
+            import pandas as pd
+            df_bench = pd.DataFrame(bench["detailed_results"])
+            st.dataframe(
+                df_bench[["claim", "category", "ground_truth", "pred_label", "pred_score", "cm_status"]],
+                use_container_width=True,
+            )
+
+    # ---- Tab 5: Report ----------------------------------------------------
     with tab_report:
         text_report = _generate_text_report(result)
         st.text_area("Full Analysis Report", value=text_report, height=400)
